@@ -5,7 +5,8 @@
 
 import pyglet
 import random
-
+from pyglet.window import key
+import copy
 
 WIN_WIDTH = 530
 WIN_HEIGHT = 720
@@ -15,11 +16,10 @@ STARTX = 15
 STARTY = 110
 
 # 每块的宽度和每行的块数（默认是正方形块）
-WINDOW_BLOCK_NUM = 6
+WINDOW_BLOCK_NUM = 8
 
 BOARD_WIDTH = (WIN_WIDTH - 2* STARTX)
 BLOCK_WIDTH = BOARD_WIDTH/WINDOW_BLOCK_NUM
-
 
 # 每块的颜色
 COLORS = {
@@ -37,13 +37,13 @@ LINE_COLOR = (165,165,165,225)
 class Window(pyglet.window.Window):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.keys = key.KeyStateHandler()
+        self.push_handlers(self.keys)
         self.game_init()
 
     def game_init(self):
         self.main_batch = pyglet.graphics.Batch()
-        self.data = [[2**(i+j+1) for i in range(WINDOW_BLOCK_NUM)] for j in range(WINDOW_BLOCK_NUM)]
-
-
+        self.data = [[2 for i in range(WINDOW_BLOCK_NUM)] for j in range(WINDOW_BLOCK_NUM)]
 
         # 背景spirite
         background_img = pyglet.image.SolidColorImagePattern(color=BG_COLOR)
@@ -121,17 +121,46 @@ class Window(pyglet.window.Window):
             4, pyglet.gl.GL_QUADS, ('v2f', corners), ('c3B', color_rgb*4))
 
         if data != 0:
+            font_s = 22 if data > 10000 else 28
+
             a = pyglet.text.Label(text=str(data), bold=True, anchor_x = 'center', anchor_y = 'center',
                     color=(0,0,0, 255), x=x+dx/2, y=y+dy/2,
-                    font_size=28)
+                    font_size=font_s)
+
             a.draw()
+
+
+    def on_key_press(self, symbol, modifiers):
+
+        eq_tile = False
+        score = 0
+
+        if symbol == key.UP:
+            print("up press")
+            self.data[0][0] = 2
+
+        elif symbol == key.DOWN:
+            print("down press")
+            self.data[WINDOW_BLOCK_NUM-1][WINDOW_BLOCK_NUM-1] = 2
+
+        elif symbol == key.LEFT:
+            print("left press")
+            self.data[WINDOW_BLOCK_NUM-1][0] = 2
+
+        elif symbol == key.RIGHT:
+            print("right press")
+            self.data[0][WINDOW_BLOCK_NUM-1] = 2
+
+        elif symbol == key.ESCAPE:
+            self.close()
+
 
 
 # 创建窗口
 win = Window(WIN_WIDTH, WIN_HEIGHT)
 
 # 设置图标
-icon = pyglet.image.load('logo.ico')
+icon = pyglet.image.load('icon.ico')
 win.set_icon(icon)
 
 pyglet.app.run()
