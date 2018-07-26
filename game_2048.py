@@ -39,7 +39,8 @@ LINE_COLOR = (165,165,165,225)
 
 
 class Game(object):
-    def __init__(self):
+    def __init__(self, key_handle):
+        self.key_handle = key_handle
         self.data = [[0 for i in range(WINDOW_BLOCK_NUM)] for j in range(WINDOW_BLOCK_NUM)]
         
         # 随机两个位置填充2或者4
@@ -157,6 +158,42 @@ class Game(object):
 
         return a and b and c and d
 
+    def game_win(self):
+        # 2维数组展开到1维
+        data = [j for i in self.data for j in i]
+        return data.count(2048)>0
+
+    def handle_input(self, symbol):
+        eq_tile = False
+        key_press = False
+        score = 0
+        if symbol == self.key_handle['UP']:
+            self.data, eq_tile, score = self.slideUpDown(True)
+            key_press = True
+        elif symbol == self.key_handle['DOWN']:
+            self.data, eq_tile, score = self.slideUpDown(False)
+            key_press = True
+        elif symbol == self.key_handle['LEFT']:
+            self.data, eq_tile, score = self.slideLeftRight(True)
+            key_press = True
+
+        elif symbol == self.key_handle['RIGHT']:
+            self.data, eq_tile, score = self.slideLeftRight(False)
+            key_press = True
+        
+        # 悔棋 记录
+        if key_press and (not eq_tile):
+            # 当有按键按下，并且两次的数据不同时
+            self.add_score(score)
+            self.save()
+
+        if key_press:
+            # 当有按键按下，并且不能再放入新块时
+            return not self.put_tile()
+        else:
+            return False
+
+
 
 class Window(pyglet.window.Window):
     def __init__(self, *args, **kwargs):
@@ -166,10 +203,11 @@ class Window(pyglet.window.Window):
         self.game_init()
 
     def game_init(self):
-        self.game1 = Game()
-        self.game2 = Game()
-        self.main_batch = pyglet.graphics.Batch()
+        self.game_over = False
+        self.game2 = Game({'UP':key.UP, 'DOWN':key.DOWN, 'LEFT':key.LEFT, 'RIGHT':key.RIGHT})
+        self.game1 = Game({'UP':key.W, 'DOWN':key.S, 'LEFT':key.A, 'RIGHT':key.D})
 
+        self.main_batch = pyglet.graphics.Batch()
 
 
         # 背景spirite
@@ -185,25 +223,32 @@ class Window(pyglet.window.Window):
 
 
         self.score_label = pyglet.text.Label(text="", bold=True, 
-                color = LABEL_COLOR, x=200, y=BOARD_WIDTH+STARTY+30,
+                color = LABEL_COLOR, x=100+200, y=BOARD_WIDTH+STARTY+30,
                 font_size=36, batch= self.main_batch)
         # Help
-        self.help_label = pyglet.text.Label(text="please use up, down, ->, <-, to play!", bold=True, 
+        self.help_label1 = pyglet.text.Label(text="please use w, s, a, d, to play!", bold=True, 
                 color = LABEL_COLOR, x=STARTX, y=STARTY - 30,
-                font_size=18, batch= self.main_batch)
+                font_size=16, batch= self.main_batch)
+        self.help_label2 = pyglet.text.Label(text="please use up, down, ->, <-, to play!", bold=True, 
+                color = LABEL_COLOR, x=STARTX+GAME_WIDTH+GAME_SPACE, y=STARTY - 30,
+                font_size=16, batch= self.main_batch)
 
         self.restart_label = pyglet.text.Label(text="press R to restart, ESC to quit.", bold=True, 
-                color=(119,110,101, 255), x=STARTX, y=35,
+                color=(119,110,101, 255), x=STARTX, y=STARTY - 90,
                 font_size=16, batch= self.main_batch) 
+
+        self.win_label = pyglet.text.Label(text="who get 2048 first will win the game.", bold=True, 
+                color=(119,110,101, 255), x=STARTX, y=STARTY - 60,
+                font_size=16, batch= self.main_batch)         
         
 
     def on_draw(self):
         self.clear()
-        self.score_label.text = "Score = %d  vs  %d"%(self.game1.score, self.game2.score)
+        self.score_label.text = "Score  =  %d    VS    %d"%(self.game1.score, self.game2.score)
         self.background.draw()
     
         self.draw_game(STARTX, STARTY, self.game1.data)
-        self.draw_game(STARTX + GAME_WIDTH + GAME_SPACE, STARTY, self.game2.data)
+        self.draw_game(STARTX+530+100, STARTY, self.game2.data)
 
         self.main_batch.draw()
 
@@ -216,7 +261,6 @@ class Window(pyglet.window.Window):
                 self.draw_tile((x,y,BLOCK_WIDTH,BLOCK_WIDTH), data[row][col])
 
         self.draw_grid(startx, starty)
-
 
     def draw_grid(self, startx, starty):
         rows = columns = WINDOW_BLOCK_NUM+1
@@ -266,44 +310,37 @@ class Window(pyglet.window.Window):
 
 
     def on_key_press(self, symbol, modifiers):
-
-        eq_tile = False
-        key_press = False
-        score = 0
-
-        if symbol == key.UP:
-            self.game1.data, eq_tile, score = self.game1.slideUpDown(True)
-            key_press = True
-        elif symbol == key.DOWN:
-            self.game1.data, eq_tile, score = self.game1.slideUpDown(False)
-            key_press = True
-        elif symbol == key.LEFT:
-            self.game1.data, eq_tile, score = self.game1.slideLeftRight(True)
-            key_press = True
-
-        elif symbol == key.RIGHT:
-            self.game1.data, eq_tile, score = self.game1.slideLeftRight(False)
-            key_press = True
-        elif symbol == key.ESCAPE:
+        
+        if symbol == key.ESCAPE:
             self.close()
-
         elif symbol == key.R:
             self.game_init()
 
 
-        if key_press and (not self.game1.put_tile()):
+        if not self.game_over:
 
-            # Game Over
-            if self.game1.game_over():
+            self.game1.handle_input(symbol)
+            self.game2.handle_input(symbol)
+
+            # 你输了或者他赢了
+            if self.game1.game_over() or self.game2.game_win():
+                self.game_over = True
                 a = pyglet.text.Label(text="You Lose, \nPlease try again!", bold=True, anchor_x = 'center', anchor_y = 'center',
                             color=(255,255,205, 255), x=GAME_WIDTH/2, y=WIN_HEIGHT/2, width = 500, multiline=True, align='center',
                             font_size=38, batch=self.main_batch)
+                b = pyglet.text.Label(text="Congratulations! \nYou Win!", bold=True, anchor_x = 'center', anchor_y = 'center',
+                            color=(255,255,205, 255), x=GAME_WIDTH/2+GAME_WIDTH+GAME_SPACE, y=WIN_HEIGHT/2, width = 500, multiline=True, align='center',
+                            font_size=38, batch=self.main_batch)  
 
-        # 悔棋 记录
-        if key_press and (not eq_tile):
-            self.game1.add_score(score)
-            self.game1.save()
 
+            if self.game2.game_over() or self.game1.game_win():
+                self.game_over = True
+                a = pyglet.text.Label(text="Congratulations! \nYou Win!", bold=True, anchor_x = 'center', anchor_y = 'center',
+                            color=(255,255,205, 255), x=GAME_WIDTH/2, y=WIN_HEIGHT/2, width = 500, multiline=True, align='center',
+                            font_size=38, batch=self.main_batch)
+                b = pyglet.text.Label(text="You Lose, \nPlease try again!", bold=True, anchor_x = 'center', anchor_y = 'center',
+                            color=(255,255,205, 255), x=GAME_WIDTH/2+GAME_WIDTH+GAME_SPACE, y=WIN_HEIGHT/2, width = 500, multiline=True, align='center',
+                            font_size=38, batch=self.main_batch)
 
 
 # 创建窗口
