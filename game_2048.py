@@ -7,6 +7,7 @@ import pyglet
 import random
 from pyglet.window import key
 import copy
+import random
 
 WIN_WIDTH = 530
 WIN_HEIGHT = 720
@@ -44,6 +45,7 @@ class Window(pyglet.window.Window):
     def game_init(self):
         self.main_batch = pyglet.graphics.Batch()
         self.data = [[0 for i in range(WINDOW_BLOCK_NUM)] for j in range(WINDOW_BLOCK_NUM)]
+        
         # 随机两个位置填充2或者4
         count = 0
         while count<2:
@@ -54,6 +56,10 @@ class Window(pyglet.window.Window):
                 continue           
             self.data[row][col] = 2 if random.randint(0,1) else 4
             count += 1
+
+        # 增加悔棋功能
+        self.buffer = [copy.deepcopy(self.data)]
+        self.max_buf_len = 10
 
         # 背景spirite
         background_img = pyglet.image.SolidColorImagePattern(color=BG_COLOR)
@@ -76,13 +82,22 @@ class Window(pyglet.window.Window):
                 color = LABEL_COLOR, x=STARTX, y=STARTY - 30,
                 font_size=18, batch= self.main_batch)
 
+        # 悔棋
+        self.undo_label = pyglet.text.Label(text="press U to undo, you can undo %d times."%(len(self.buffer)), bold=True, 
+                color=(119,110,101, 255), x=STARTX, y=60,
+                font_size=16, batch= self.main_batch)
+
+        self.restart_label = pyglet.text.Label(text="press R to restart, ESC to quit.", bold=True, 
+                color=(119,110,101, 255), x=STARTX, y=35,
+                font_size=16, batch= self.main_batch) 
+        
 
     def on_draw(self):
         self.clear()
         self.score_label.text = "Score = %d"%(self.score)
+        self.undo_label.text = "press U to undo, you can undo %d times."%(len(self.buffer))
         self.background.draw()
-        self.main_batch.draw()
-
+    
 
         for row in range(WINDOW_BLOCK_NUM):
             for col in range(WINDOW_BLOCK_NUM):
@@ -90,6 +105,7 @@ class Window(pyglet.window.Window):
                 y = STARTY + BOARD_WIDTH - BLOCK_WIDTH - BLOCK_WIDTH*row
                 self.draw_tile((x,y,BLOCK_WIDTH,BLOCK_WIDTH), self.data[row][col])
 
+        self.main_batch.draw()
         self.draw_grid(STARTX, STARTY)
 
 
@@ -163,18 +179,36 @@ class Window(pyglet.window.Window):
             self.close()
 
         elif symbol == key.U:
-            # 悔棋
-            pass
+            # 悔棋 读取
+            if len(self.buffer)>0:
+                self.data = self.buffer[-1]
+                del self.buffer[-1]
         elif symbol == key.R:
             self.game_init()
 
         self.score += score
 
+
         if key_press and (not self.put_tile()):
-            print("Game Over")
-            a = pyglet.text.Label(text="You Lose, \nPlease try again!", bold=True, anchor_x = 'center', anchor_y = 'center',
-                        color=(255,255,205, 255), x=WIN_WIDTH/2, y=WIN_HEIGHT/2, width = 500, multiline=True, align='center',
-                        font_size=38, batch=self.main_batch)
+            # game over
+            _,a,_ = self.slideUpDown(True)
+            _,b,_ = self.slideUpDown(False)
+            _,c,_ = self.slideLeftRight(True)
+            _,d,_ = self.slideLeftRight(False)
+            # Game Over
+            if a and b and c and d:
+                print("Game Over")
+                a = pyglet.text.Label(text="You Lose, \nPlease try again!", bold=True, anchor_x = 'center', anchor_y = 'center',
+                            color=(255,255,205, 255), x=WIN_WIDTH/2, y=WIN_HEIGHT/2, width = 500, multiline=True, align='center',
+                            font_size=38, batch=self.main_batch)
+
+        # 悔棋 记录
+        if key_press and (not eq_tile):
+            print("悔棋读取")
+            if len(self.buffer) == self.max_buf_len:
+                del self.buffer[0]
+
+            self.buffer.append(copy.deepcopy(self.data))
 
 
     def merge(self,vlist,direct):
@@ -236,9 +270,12 @@ class Window(pyglet.window.Window):
 
     def put_tile(self):
         available = []
+        # 检查棋盘上是否还有空位置
         for row in range(WINDOW_BLOCK_NUM):
             for col in range(WINDOW_BLOCK_NUM):
                 if self.data[row][col]==0: available.append((row,col))
+        
+        # 随机在空位置中选一个，填入随机的2或者4.
         if available:
             row,col = available[random.randint(0,len(available)-1)]
             self.data[row][col] = 2 if random.randint(0,1) else 4
