@@ -16,7 +16,7 @@ STARTX = 15
 STARTY = 110
 
 # 每块的宽度和每行的块数（默认是正方形块）
-WINDOW_BLOCK_NUM = 8
+WINDOW_BLOCK_NUM = 4
 
 BOARD_WIDTH = (WIN_WIDTH - 2* STARTX)
 BLOCK_WIDTH = BOARD_WIDTH/WINDOW_BLOCK_NUM
@@ -44,6 +44,10 @@ class Window(pyglet.window.Window):
     def game_init(self):
         self.main_batch = pyglet.graphics.Batch()
         self.data = [[2 for i in range(WINDOW_BLOCK_NUM)] for j in range(WINDOW_BLOCK_NUM)]
+        #self.data[0][:] = [0,0,0,0]
+        ##self.data[1][0]= 0
+        #self.data[2][0]= 0
+        #self.data[3][0]= 0
 
         # 背景spirite
         background_img = pyglet.image.SolidColorImagePattern(color=BG_COLOR)
@@ -133,27 +137,82 @@ class Window(pyglet.window.Window):
     def on_key_press(self, symbol, modifiers):
 
         eq_tile = False
+        key_press = False
         score = 0
 
         if symbol == key.UP:
-            print("up press")
-            self.data[0][0] = 2
-
+            self.data, eq_tile, score = self.slideUpDown(True)
+            key_press = True
         elif symbol == key.DOWN:
-            print("down press")
-            self.data[WINDOW_BLOCK_NUM-1][WINDOW_BLOCK_NUM-1] = 2
-
+            self.data, eq_tile, score = self.slideUpDown(False)
+            key_press = True
         elif symbol == key.LEFT:
-            print("left press")
-            self.data[WINDOW_BLOCK_NUM-1][0] = 2
+            self.data, eq_tile, score = self.slideLeftRight(True)
+            key_press = True
 
         elif symbol == key.RIGHT:
-            print("right press")
-            self.data[0][WINDOW_BLOCK_NUM-1] = 2
-
+            self.data, eq_tile, score = self.slideLeftRight(False)
+            key_press = True
         elif symbol == key.ESCAPE:
             self.close()
 
+        self.score += score
+
+    def merge(self,vlist,direct):
+        score = 0
+        if direct: #up or left
+            i = 1
+            while i<len(vlist):
+                if vlist[i-1]==vlist[i]:
+                    # 当两个块值相等，则删除一个，并让另一个值*2
+                    del vlist[i]
+                    vlist[i-1] *= 2
+                    score += vlist[i-1]
+                i += 1
+        else:
+            i = len(vlist)-1
+            while i>0:
+                if vlist[i-1]==vlist[i]:
+                    del vlist[i]
+                    vlist[i-1] *= 2
+                    score += vlist[i-1]
+                i -= 1      
+        return score
+        
+    def slideUpDown(self,up):
+        oldData = copy.deepcopy(self.data)
+        score = 0
+        for col in range(WINDOW_BLOCK_NUM):
+            
+            # 抽取一维非零向量
+            cvl = [oldData[row][col] for row in range(WINDOW_BLOCK_NUM) if oldData[row][col]!=0]
+
+            # 合并
+            if len(cvl)>=2:
+                score += self.merge(cvl,up)
+            
+            # 补零
+            for i in range(WINDOW_BLOCK_NUM-len(cvl)):
+                if up: cvl.append(0)
+                else: cvl.insert(0,0)
+            
+            # 回填
+            for row in range(WINDOW_BLOCK_NUM): oldData[row][col] = cvl[row]
+        return oldData, oldData==self.data, score
+
+    def slideLeftRight(self,left):
+        oldData = copy.deepcopy(self.data)
+        score = 0
+        for row in range(WINDOW_BLOCK_NUM):
+            rvl = [oldData[row][col] for col in range(WINDOW_BLOCK_NUM) if oldData[row][col]!=0]
+
+            if len(rvl)>=2:           
+                score += self.merge(rvl,left)
+            for i in range(WINDOW_BLOCK_NUM-len(rvl)):
+                if left: rvl.append(0)
+                else: rvl.insert(0,0)
+            for col in range(WINDOW_BLOCK_NUM): oldData[row][col] = rvl[col]
+        return oldData, oldData==self.data, score
 
 
 # 创建窗口
