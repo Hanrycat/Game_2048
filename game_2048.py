@@ -9,7 +9,9 @@ from pyglet.window import key
 import copy
 import random
 
-WIN_WIDTH = 530
+GAME_SPACE = 100
+GAME_WIDTH = 530
+WIN_WIDTH = GAME_WIDTH*2+GAME_SPACE
 WIN_HEIGHT = 720
 
 # 棋盘起始位置左下角的x，y
@@ -19,7 +21,7 @@ STARTY = 110
 # 每块的宽度和每行的块数（默认是正方形块）
 WINDOW_BLOCK_NUM = 4
 
-BOARD_WIDTH = (WIN_WIDTH - 2* STARTX)
+BOARD_WIDTH = (GAME_WIDTH - 2* STARTX)
 BLOCK_WIDTH = BOARD_WIDTH/WINDOW_BLOCK_NUM
 
 # 每块的颜色
@@ -35,15 +37,9 @@ LABEL_COLOR = (119, 110, 101, 255)
 BG_COLOR = (250,248,239,255)
 LINE_COLOR = (165,165,165,225)
 
-class Window(pyglet.window.Window):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.keys = key.KeyStateHandler()
-        self.push_handlers(self.keys)
-        self.game_init()
 
-    def game_init(self):
-        self.main_batch = pyglet.graphics.Batch()
+class Game(object):
+    def __init__(self):
         self.data = [[0 for i in range(WINDOW_BLOCK_NUM)] for j in range(WINDOW_BLOCK_NUM)]
         
         # 随机两个位置填充2或者4
@@ -58,8 +54,123 @@ class Window(pyglet.window.Window):
             count += 1
 
         # 增加悔棋功能
-        self.buffer = [copy.deepcopy(self.data)]
+        self.buffer = [(copy.deepcopy(self.data),0)]
         self.max_buf_len = 10
+        # Score
+        self.score = 0
+
+    def undo(self):
+        # 读取悔棋buffer
+        if len(self.buffer)>0:
+            self.data, self.score = self.buffer[-1]
+            del self.buffer[-1]
+
+    def save(self):
+        # 写入悔棋buffer
+        if len(self.buffer) == self.max_buf_len:
+            del self.buffer[0]
+
+        self.buffer.append((copy.deepcopy(self.data), self.score))
+
+    def add_score(self, score):
+        self.score += score
+
+    def slideUpDown(self,up):
+        oldData = copy.deepcopy(self.data)
+        score = 0
+        for col in range(WINDOW_BLOCK_NUM):
+            
+            # 抽取一维非零向量
+            cvl = [oldData[row][col] for row in range(WINDOW_BLOCK_NUM) if oldData[row][col]!=0]
+
+            # 合并
+            if len(cvl)>=2:
+                score += self.merge(cvl,up)
+            
+            # 补零
+            for i in range(WINDOW_BLOCK_NUM-len(cvl)):
+                if up: cvl.append(0)
+                else: cvl.insert(0,0)
+            
+            # 回填
+            for row in range(WINDOW_BLOCK_NUM): oldData[row][col] = cvl[row]
+
+        return oldData, oldData==self.data, score
+
+    def slideLeftRight(self,left):
+        oldData = copy.deepcopy(self.data)
+        score = 0
+        for row in range(WINDOW_BLOCK_NUM):
+            rvl = [oldData[row][col] for col in range(WINDOW_BLOCK_NUM) if oldData[row][col]!=0]
+
+            if len(rvl)>=2:           
+                score += self.merge(rvl,left)
+            for i in range(WINDOW_BLOCK_NUM-len(rvl)):
+                if left: rvl.append(0)
+                else: rvl.insert(0,0)
+            for col in range(WINDOW_BLOCK_NUM): oldData[row][col] = rvl[col]
+        return oldData, oldData==self.data, score
+
+    def merge(self,vlist,direct):
+        score = 0
+        if direct: #up or left
+            i = 1
+            while i<len(vlist):
+                if vlist[i-1]==vlist[i]:
+                    # 当两个块值相等，则删除一个，并让另一个值*2
+                    del vlist[i]
+                    vlist[i-1] *= 2
+                    score += vlist[i-1]
+                i += 1
+        else:
+            i = len(vlist)-1
+            while i>0:
+                if vlist[i-1]==vlist[i]:
+                    del vlist[i]
+                    vlist[i-1] *= 2
+                    score += vlist[i-1]
+                i -= 1      
+        return score
+
+
+    def put_tile(self):
+        available = []
+        # 检查棋盘上是否还有空位置
+        for row in range(WINDOW_BLOCK_NUM):
+            for col in range(WINDOW_BLOCK_NUM):
+                if self.data[row][col]==0: available.append((row,col))
+        
+        # 随机在空位置中选一个，填入随机的2或者4.
+        if available:
+            row,col = available[random.randint(0,len(available)-1)]
+            self.data[row][col] = 2 if random.randint(0,1) else 4
+            return True
+        else:
+            return False
+
+    def game_over(self):
+        # game over
+        _,a,_ = self.slideUpDown(True)
+        _,b,_ = self.slideUpDown(False)
+        _,c,_ = self.slideLeftRight(True)
+        _,d,_ = self.slideLeftRight(False)
+
+        return a and b and c and d
+
+
+class Window(pyglet.window.Window):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.keys = key.KeyStateHandler()
+        self.push_handlers(self.keys)
+        self.game_init()
+
+    def game_init(self):
+        self.game1 = Game()
+        self.game2 = Game()
+        self.main_batch = pyglet.graphics.Batch()
+
+
 
         # 背景spirite
         background_img = pyglet.image.SolidColorImagePattern(color=BG_COLOR)
@@ -72,20 +183,14 @@ class Window(pyglet.window.Window):
                 color = LABEL_COLOR, x = STARTX, y=BOARD_WIDTH+STARTY+30, 
                 font_size=36, batch= self.main_batch)
 
-        # Score
-        self.score = 0
-        self.score_label = pyglet.text.Label(text="Score = %d"%(self.score), bold=True, 
+
+        self.score_label = pyglet.text.Label(text="", bold=True, 
                 color = LABEL_COLOR, x=200, y=BOARD_WIDTH+STARTY+30,
                 font_size=36, batch= self.main_batch)
         # Help
         self.help_label = pyglet.text.Label(text="please use up, down, ->, <-, to play!", bold=True, 
                 color = LABEL_COLOR, x=STARTX, y=STARTY - 30,
                 font_size=18, batch= self.main_batch)
-
-        # 悔棋
-        self.undo_label = pyglet.text.Label(text="press U to undo, you can undo %d times."%(len(self.buffer)), bold=True, 
-                color=(119,110,101, 255), x=STARTX, y=60,
-                font_size=16, batch= self.main_batch)
 
         self.restart_label = pyglet.text.Label(text="press R to restart, ESC to quit.", bold=True, 
                 color=(119,110,101, 255), x=STARTX, y=35,
@@ -94,19 +199,23 @@ class Window(pyglet.window.Window):
 
     def on_draw(self):
         self.clear()
-        self.score_label.text = "Score = %d"%(self.score)
-        self.undo_label.text = "press U to undo, you can undo %d times."%(len(self.buffer))
+        self.score_label.text = "Score = %d  vs  %d"%(self.game1.score, self.game2.score)
         self.background.draw()
     
-
-        for row in range(WINDOW_BLOCK_NUM):
-            for col in range(WINDOW_BLOCK_NUM):
-                x = STARTX + BLOCK_WIDTH*col
-                y = STARTY + BOARD_WIDTH - BLOCK_WIDTH - BLOCK_WIDTH*row
-                self.draw_tile((x,y,BLOCK_WIDTH,BLOCK_WIDTH), self.data[row][col])
+        self.draw_game(STARTX, STARTY, self.game1.data)
+        self.draw_game(STARTX + GAME_WIDTH + GAME_SPACE, STARTY, self.game2.data)
 
         self.main_batch.draw()
-        self.draw_grid(STARTX, STARTY)
+
+
+    def draw_game(self, startx, starty, data):
+        for row in range(WINDOW_BLOCK_NUM):
+            for col in range(WINDOW_BLOCK_NUM):
+                x = startx + BLOCK_WIDTH*col
+                y = starty + BOARD_WIDTH - BLOCK_WIDTH - BLOCK_WIDTH*row
+                self.draw_tile((x,y,BLOCK_WIDTH,BLOCK_WIDTH), data[row][col])
+
+        self.draw_grid(startx, starty)
 
 
     def draw_grid(self, startx, starty):
@@ -163,125 +272,39 @@ class Window(pyglet.window.Window):
         score = 0
 
         if symbol == key.UP:
-            self.data, eq_tile, score = self.slideUpDown(True)
+            self.game1.data, eq_tile, score = self.game1.slideUpDown(True)
             key_press = True
         elif symbol == key.DOWN:
-            self.data, eq_tile, score = self.slideUpDown(False)
+            self.game1.data, eq_tile, score = self.game1.slideUpDown(False)
             key_press = True
         elif symbol == key.LEFT:
-            self.data, eq_tile, score = self.slideLeftRight(True)
+            self.game1.data, eq_tile, score = self.game1.slideLeftRight(True)
             key_press = True
 
         elif symbol == key.RIGHT:
-            self.data, eq_tile, score = self.slideLeftRight(False)
+            self.game1.data, eq_tile, score = self.game1.slideLeftRight(False)
             key_press = True
         elif symbol == key.ESCAPE:
             self.close()
 
-        elif symbol == key.U:
-            # 悔棋 读取
-            if len(self.buffer)>0:
-                self.data = self.buffer[-1]
-                del self.buffer[-1]
         elif symbol == key.R:
             self.game_init()
 
-        self.score += score
 
+        if key_press and (not self.game1.put_tile()):
 
-        if key_press and (not self.put_tile()):
-            # game over
-            _,a,_ = self.slideUpDown(True)
-            _,b,_ = self.slideUpDown(False)
-            _,c,_ = self.slideLeftRight(True)
-            _,d,_ = self.slideLeftRight(False)
             # Game Over
-            if a and b and c and d:
-                print("Game Over")
+            if self.game1.game_over():
                 a = pyglet.text.Label(text="You Lose, \nPlease try again!", bold=True, anchor_x = 'center', anchor_y = 'center',
-                            color=(255,255,205, 255), x=WIN_WIDTH/2, y=WIN_HEIGHT/2, width = 500, multiline=True, align='center',
+                            color=(255,255,205, 255), x=GAME_WIDTH/2, y=WIN_HEIGHT/2, width = 500, multiline=True, align='center',
                             font_size=38, batch=self.main_batch)
 
         # 悔棋 记录
         if key_press and (not eq_tile):
-            print("悔棋读取")
-            if len(self.buffer) == self.max_buf_len:
-                del self.buffer[0]
-
-            self.buffer.append(copy.deepcopy(self.data))
+            self.game1.add_score(score)
+            self.game1.save()
 
 
-    def merge(self,vlist,direct):
-        score = 0
-        if direct: #up or left
-            i = 1
-            while i<len(vlist):
-                if vlist[i-1]==vlist[i]:
-                    # 当两个块值相等，则删除一个，并让另一个值*2
-                    del vlist[i]
-                    vlist[i-1] *= 2
-                    score += vlist[i-1]
-                i += 1
-        else:
-            i = len(vlist)-1
-            while i>0:
-                if vlist[i-1]==vlist[i]:
-                    del vlist[i]
-                    vlist[i-1] *= 2
-                    score += vlist[i-1]
-                i -= 1      
-        return score
-        
-    def slideUpDown(self,up):
-        oldData = copy.deepcopy(self.data)
-        score = 0
-        for col in range(WINDOW_BLOCK_NUM):
-            
-            # 抽取一维非零向量
-            cvl = [oldData[row][col] for row in range(WINDOW_BLOCK_NUM) if oldData[row][col]!=0]
-
-            # 合并
-            if len(cvl)>=2:
-                score += self.merge(cvl,up)
-            
-            # 补零
-            for i in range(WINDOW_BLOCK_NUM-len(cvl)):
-                if up: cvl.append(0)
-                else: cvl.insert(0,0)
-            
-            # 回填
-            for row in range(WINDOW_BLOCK_NUM): oldData[row][col] = cvl[row]
-        return oldData, oldData==self.data, score
-
-    def slideLeftRight(self,left):
-        oldData = copy.deepcopy(self.data)
-        score = 0
-        for row in range(WINDOW_BLOCK_NUM):
-            rvl = [oldData[row][col] for col in range(WINDOW_BLOCK_NUM) if oldData[row][col]!=0]
-
-            if len(rvl)>=2:           
-                score += self.merge(rvl,left)
-            for i in range(WINDOW_BLOCK_NUM-len(rvl)):
-                if left: rvl.append(0)
-                else: rvl.insert(0,0)
-            for col in range(WINDOW_BLOCK_NUM): oldData[row][col] = rvl[col]
-        return oldData, oldData==self.data, score
-
-
-    def put_tile(self):
-        available = []
-        # 检查棋盘上是否还有空位置
-        for row in range(WINDOW_BLOCK_NUM):
-            for col in range(WINDOW_BLOCK_NUM):
-                if self.data[row][col]==0: available.append((row,col))
-        
-        # 随机在空位置中选一个，填入随机的2或者4.
-        if available:
-            row,col = available[random.randint(0,len(available)-1)]
-            self.data[row][col] = 2 if random.randint(0,1) else 4
-            return True
-        else:
-            return False
 
 # 创建窗口
 win = Window(WIN_WIDTH, WIN_HEIGHT)
