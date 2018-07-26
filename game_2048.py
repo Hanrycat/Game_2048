@@ -43,11 +43,17 @@ class Window(pyglet.window.Window):
 
     def game_init(self):
         self.main_batch = pyglet.graphics.Batch()
-        self.data = [[2 for i in range(WINDOW_BLOCK_NUM)] for j in range(WINDOW_BLOCK_NUM)]
-        #self.data[0][:] = [0,0,0,0]
-        ##self.data[1][0]= 0
-        #self.data[2][0]= 0
-        #self.data[3][0]= 0
+        self.data = [[0 for i in range(WINDOW_BLOCK_NUM)] for j in range(WINDOW_BLOCK_NUM)]
+        # 随机两个位置填充2或者4
+        count = 0
+        while count<2:
+            row = random.randint(0,WINDOW_BLOCK_NUM-1)
+            col = random.randint(0,WINDOW_BLOCK_NUM-1)
+            if self.data[row][col]!=0:
+                count += 1
+                continue           
+            self.data[row][col] = 2 if random.randint(0,1) else 4
+            count += 1
 
         # 背景spirite
         background_img = pyglet.image.SolidColorImagePattern(color=BG_COLOR)
@@ -156,7 +162,20 @@ class Window(pyglet.window.Window):
         elif symbol == key.ESCAPE:
             self.close()
 
+        elif symbol == key.U:
+            # 悔棋
+            pass
+        elif symbol == key.R:
+            self.game_init()
+
         self.score += score
+
+        if key_press and (not self.put_tile()):
+            print("Game Over")
+            a = pyglet.text.Label(text="You Lose, \nPlease try again!", bold=True, anchor_x = 'center', anchor_y = 'center',
+                        color=(255,255,205, 255), x=WIN_WIDTH/2, y=WIN_HEIGHT/2, width = 500, multiline=True, align='center',
+                        font_size=38, batch=self.main_batch)
+
 
     def merge(self,vlist,direct):
         score = 0
@@ -214,6 +233,18 @@ class Window(pyglet.window.Window):
             for col in range(WINDOW_BLOCK_NUM): oldData[row][col] = rvl[col]
         return oldData, oldData==self.data, score
 
+
+    def put_tile(self):
+        available = []
+        for row in range(WINDOW_BLOCK_NUM):
+            for col in range(WINDOW_BLOCK_NUM):
+                if self.data[row][col]==0: available.append((row,col))
+        if available:
+            row,col = available[random.randint(0,len(available)-1)]
+            self.data[row][col] = 2 if random.randint(0,1) else 4
+            return True
+        else:
+            return False
 
 # 创建窗口
 win = Window(WIN_WIDTH, WIN_HEIGHT)
